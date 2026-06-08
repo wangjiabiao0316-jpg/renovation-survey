@@ -1,27 +1,101 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ALL_SECTIONS, SECTION_ORDER, SECTION_META } from '@/lib/questions';
 import { Question } from '@/types';
+
+interface Customizations {
+  [questionId: string]: {
+    custom_label?: string;
+    custom_hint?: string;
+    image_url?: string;
+  };
+}
 
 export default function QuestionsPage() {
   const router = useRouter();
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [customLabels, setCustomLabels] = useState<Record<string, string>>({});
-  const [customHints, setCustomHints] = useState<Record<string, string>>({});
-  const [referenceImages, setReferenceImages] = useState<Record<string, string>>({});
+  const [customizations, setCustomizations] = useState<Customizations>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = (question: Question) => {
-    // TODO: 保存到 Supabase
-    console.log('Saved:', question.id, {
-      customLabel: customLabels[question.id],
-      customHint: customHints[question.id],
-      imageUrl: referenceImages[question.id],
-    });
-    setEditingQuestion(null);
+  // Form state for the editing modal
+  const [editLabel, setEditLabel] = useState('');
+  const [editHint, setEditHint] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch('/api/admin/questions');
+        const data = await res.json();
+        if (data.customizations) {
+          setCustomizations(data.customizations);
+        }
+      } catch (err) {
+        console.error('Failed to load customizations:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const openEditor = (q: Question) => {
+    const cust = customizations[q.id] || {};
+    setEditLabel(cust.custom_label || '');
+    setEditHint(cust.custom_hint || '');
+    setEditImageUrl(cust.image_url || '');
+    setEditingQuestion(q);
   };
+
+  const handleSave = async () => {
+    if (!editingQuestion) return;
+    setSaving(true);
+
+    try {
+      const res = await fetch('/api/admin/questions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question_id: editingQuestion.id,
+          custom_label: editLabel || null,
+          custom_hint: editHint || null,
+          image_url: editImageUrl || null,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+      } else {
+        // Update local state
+        setCustomizations((prev) => ({
+          ...prev,
+          [editingQuestion.id]: {
+            custom_label: editLabel || undefined,
+            custom_hint: editHint || undefined,
+            image_url: editImageUrl || undefined,
+          },
+        }));
+        setEditingQuestion(null);
+      }
+    } catch {
+      alert('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">加载中...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -72,26 +146,29 @@ export default function QuestionsPage() {
 
                 {isExpanded && (
                   <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                    {section.questions.map((q) => (
-                      <div key={q.id} className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 truncate">
-                            {customLabels[q.id] || q.label}
-                          </p>
-                          <p className="text-xs text-gray-400 truncate mt-0.5">
-                            {q.type}
-                            {customLabels[q.id] && ' (已自定义)'}
-                            {referenceImages[q.id] && ' · 有参考图'}
-                          </p>
+                    {section.questions.map((q) => {
+                      const cust = customizations[q.id];
+                      return (
+                        <div key={q.id} className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-700 truncate">
+                              {cust?.custom_label || q.label}
+                            </p>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">
+                              {q.type}
+                              {cust?.custom_label && ' (已自定义)'}
+                              {cust?.image_url && ' · 有参考图'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => openEditor(q)}
+                            className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap py-1"
+                          >
+                            编辑
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setEditingQuestion(q)}
-                          className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap py-1"
-                        >
-                          编辑
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -110,7 +187,7 @@ export default function QuestionsPage() {
               <h3 className="font-bold text-gray-800 mb-4">编辑问题</h3>
 
               <div className="space-y-4">
-                {/* 原标题 */}
+                {/* Original */}
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">原标题</label>
                   <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
@@ -118,29 +195,25 @@ export default function QuestionsPage() {
                   </p>
                 </div>
 
-                {/* 自定义标题 */}
+                {/* Custom label */}
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">自定义标题（留空使用原文）</label>
                   <input
                     type="text"
-                    value={customLabels[editingQuestion.id] || ''}
-                    onChange={(e) =>
-                      setCustomLabels({ ...customLabels, [editingQuestion.id]: e.target.value })
-                    }
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
                     placeholder={editingQuestion.label}
                     className="input-field text-sm"
                   />
                 </div>
 
-                {/* 自定义提示 */}
+                {/* Custom hint */}
                 {editingQuestion.hint && (
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">自定义提示（留空使用原文）</label>
                     <textarea
-                      value={customHints[editingQuestion.id] || ''}
-                      onChange={(e) =>
-                        setCustomHints({ ...customHints, [editingQuestion.id]: e.target.value })
-                      }
+                      value={editHint}
+                      onChange={(e) => setEditHint(e.target.value)}
                       placeholder={editingQuestion.hint}
                       className="input-field text-sm"
                       rows={2}
@@ -148,21 +221,19 @@ export default function QuestionsPage() {
                   </div>
                 )}
 
-                {/* 参考图片 URL */}
+                {/* Reference image URL */}
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">参考图片 URL（可选）</label>
                   <input
                     type="text"
-                    value={referenceImages[editingQuestion.id] || ''}
-                    onChange={(e) =>
-                      setReferenceImages({ ...referenceImages, [editingQuestion.id]: e.target.value })
-                    }
+                    value={editImageUrl}
+                    onChange={(e) => setEditImageUrl(e.target.value)}
                     placeholder="https://..."
                     className="input-field text-sm"
                   />
-                  {referenceImages[editingQuestion.id] && (
+                  {editImageUrl && (
                     <img
-                      src={referenceImages[editingQuestion.id]}
+                      src={editImageUrl}
                       alt="预览"
                       className="mt-2 w-full h-32 object-cover rounded-lg border"
                     />
@@ -179,10 +250,11 @@ export default function QuestionsPage() {
                   取消
                 </button>
                 <button
-                  onClick={() => handleSave(editingQuestion)}
+                  onClick={handleSave}
+                  disabled={saving}
                   className="btn-primary flex-1"
                 >
-                  保存
+                  {saving ? '保存中...' : '保存'}
                 </button>
               </div>
             </div>

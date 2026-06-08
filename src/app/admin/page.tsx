@@ -17,17 +17,25 @@ export default function AdminLoginPage() {
       return;
     }
     setLoading(true);
-    // TODO: 对接 Supabase Admin Auth
-    // 模拟登录
-    setTimeout(() => {
-      if (email === 'designer@example.com' && password === 'admin123') {
-        setLoading(false);
-        router.push('/admin/clients');
+
+    try {
+      const res = await fetch('/api/auth/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        setError(data.error);
       } else {
-        setError('邮箱或密码错误');
-        setLoading(false);
+        router.push('/admin/clients');
       }
-    }, 800);
+    } catch {
+      setError('网络错误，请重试');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -69,10 +77,6 @@ export default function AdminLoginPage() {
             {loading ? '登录中...' : '登录'}
           </button>
         </div>
-
-        <p className="text-xs text-gray-300 text-center mt-6">
-          默认账号：designer@example.com / admin123
-        </p>
       </div>
     </div>
   );

@@ -1,23 +1,18 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-import { Answer, SectionKey, FamilyMember, ImageAttachment } from '@/types';
+import { Answer, SectionKey, FamilyMember } from '@/types';
 import { SECTION_ORDER, ALL_SECTIONS, getNextSection, getPrevSection, getStepIndex, getTotalSteps } from '@/lib/questions';
 import { calculateProgress } from '@/lib/utils';
 
 interface QuestionnaireState {
-  // 答案
   answers: Record<string, any>;
-  // 家庭成员
   familyMembers: FamilyMember[];
-  // 当前 section
   currentSection: SectionKey;
-  // 保存状态
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
-  // 进度
   percentage: number;
-  // 是否已提交
   submitted: boolean;
+  loading: boolean;
 }
 
 interface QuestionnaireContext extends QuestionnaireState {
@@ -36,42 +31,116 @@ interface QuestionnaireContext extends QuestionnaireState {
 
 const QuestionnaireCtx = createContext<QuestionnaireContext | null>(null);
 
-// 模拟后端：localStorage key
-const STORAGE_KEY = 'renovation_survey_answers';
-const MEMBERS_KEY = 'renovation_survey_members';
+function createEmptyMember(): FamilyMember {
+  return {
+    role: '',
+    ageGroup: '',
+    dailyState: '',
+    timeAtHome: '',
+    activities: [],
+    specialNeeds: '',
+  };
+}
+
+// Debounced save timer ref — shared across renders
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingAnswers: Record<string, { value: any; section: string }> = {};
+let pendingMembers: FamilyMember[] | null = null;
+
+async function flushSaves() {
+  const ap = pendingAnswers;
+  const mp = pendingMembers;
+  pendingAnswers = {};
+  pendingMembers = null;
+
+  const promises: Promise<any>[] = [];
+
+  if (Object.keys(ap).length > 0) {
+    promises.push(
+      fetch('/api/questionnaire/answers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: ap }),
+      })
+    );
+  }
+
+  if (mp !== null) {
+    promises.push(
+      fetch('/api/questionnaire/members', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members: mp }),
+      })
+    );
+  }
+
+  await Promise.all(promises);
+}
+
+function scheduleSave(
+  setSaveStatus: (status: 'idle' | 'saving' | 'saved' | 'error') => void
+) {
+  if (saveTimer) clearTimeout(saveTimer);
+  setSaveStatus('saving');
+  saveTimer = setTimeout(async () => {
+    try {
+      await flushSaves();
+      setSaveStatus('saved');
+    } catch {
+      setSaveStatus('error');
+    }
+  }, 2000);
+}
+
+export { createEmptyMember };
 
 export function QuestionnaireProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<QuestionnaireState>(() => {
-    // 从 localStorage 恢复
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        const savedMembers = localStorage.getItem(MEMBERS_KEY);
-        return {
-          answers: saved ? JSON.parse(saved) : {},
-          familyMembers: savedMembers ? JSON.parse(savedMembers) : [createEmptyMember()],
-          currentSection: 'a',
-          saveStatus: 'idle',
-          percentage: 0,
-          submitted: false,
-        };
-      } catch {}
-    }
-    return {
-      answers: {},
-      familyMembers: [createEmptyMember()],
-      currentSection: 'a',
-      saveStatus: 'idle',
-      percentage: 0,
-      submitted: false,
-    };
+  const [state, setState] = useState<QuestionnaireState>({
+    answers: {},
+    familyMembers: [createEmptyMember()],
+    currentSection: 'a',
+    saveStatus: 'idle',
+    percentage: 0,
+    submitted: false,
+    loading: true,
   });
 
-  // 计算进度
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Load saved data from server on mount
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [answersRes, membersRes] = await Promise.all([
+          fetch('/api/questionnaire/answers').then((r) => r.json()).catch(() => ({ answers: {} })),
+          fetch('/api/questionnaire/members').then((r) => r.json()).catch(() => ({ members: [] })),
+        ]);
+
+        const loadedAnswers = answersRes.answers || {};
+        const loadedMembers = membersRes.members?.length
+          ? membersRes.members
+          : [createEmptyMember()];
+
+        setState((prev) => ({
+          ...prev,
+          answers: loadedAnswers,
+          familyMembers: loadedMembers,
+          loading: false,
+        }));
+      } catch {
+        setState((prev) => ({ ...prev, loading: false }));
+      }
+    }
+
+    loadData();
+  }, []);
+
+  // Calculate progress
   useEffect(() => {
     const progress = calculateProgress(
       Object.entries(state.answers).map(([key, value]) => {
-        // 找到这个 key 属于哪个 section
         let section: SectionKey = 'a';
         for (const sk of SECTION_ORDER) {
           if (ALL_SECTIONS[sk].questions.some((q) => q.key === key)) {
@@ -90,53 +159,56 @@ export function QuestionnaireProvider({ children }: { children: React.ReactNode 
     setState((prev) => ({ ...prev, percentage: progress.percentage }));
   }, [state.answers]);
 
-  // 自动保存到 localStorage（模拟后端）
-  const saveToStorage = useCallback((answers: Record<string, any>, members: FamilyMember[]) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
-      localStorage.setItem(MEMBERS_KEY, JSON.stringify(members));
-    }
-  }, []);
-
   const setAnswer = useCallback(
     (questionKey: string, value: any, section: SectionKey) => {
       setState((prev) => {
         const newAnswers = { ...prev.answers, [questionKey]: value };
-        saveToStorage(newAnswers, prev.familyMembers);
-        return { ...prev, answers: newAnswers, saveStatus: 'saved' };
+        // Queue for debounced save
+        pendingAnswers[questionKey] = { value, section };
+        scheduleSave((status) => {
+          setState((s) => ({ ...s, saveStatus: status }));
+        });
+        return { ...prev, answers: newAnswers, saveStatus: 'saving' };
       });
     },
-    [saveToStorage]
+    []
   );
 
   const setFamilyMembers = useCallback(
     (members: FamilyMember[]) => {
       setState((prev) => {
-        saveToStorage(prev.answers, members);
-        return { ...prev, familyMembers: members, saveStatus: 'saved' };
+        pendingMembers = members;
+        scheduleSave((status) => {
+          setState((s) => ({ ...s, saveStatus: status }));
+        });
+        return { ...prev, familyMembers: members, saveStatus: 'saving' };
       });
     },
-    [saveToStorage]
+    []
   );
 
   const goToSection = useCallback((section: SectionKey) => {
+    // Flush pending saves immediately on navigation
+    flushSaves().catch(() => {});
     setState((prev) => ({ ...prev, currentSection: section }));
-    // 滚动到顶部
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const goToNext = useCallback(() => {
-    const next = getNextSection(state.currentSection);
+    const next = getNextSection(stateRef.current.currentSection);
     if (next) goToSection(next);
-  }, [state.currentSection, goToSection]);
+  }, [goToSection]);
 
   const goToPrev = useCallback(() => {
-    const prev = getPrevSection(state.currentSection);
+    const prev = getPrevSection(stateRef.current.currentSection);
     if (prev) goToSection(prev);
-  }, [state.currentSection, goToSection]);
+  }, [goToSection]);
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
+    // Flush all pending saves first
+    await flushSaves();
     setState((prev) => ({ ...prev, submitted: true }));
+    // Redirect to complete page is handled by the section page
   }, []);
 
   const getSectionAnswers = useCallback(
@@ -183,16 +255,3 @@ export function useQuestionnaire() {
   if (!ctx) throw new Error('useQuestionnaire must be used within QuestionnaireProvider');
   return ctx;
 }
-
-function createEmptyMember(): FamilyMember {
-  return {
-    role: '',
-    ageGroup: '',
-    dailyState: '',
-    timeAtHome: '',
-    activities: [],
-    specialNeeds: '',
-  };
-}
-
-export { createEmptyMember };

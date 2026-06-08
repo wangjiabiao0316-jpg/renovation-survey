@@ -1,45 +1,70 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+// Simple fetch wrapper that handles JSON responses
+async function api(path: string, body?: Record<string, any>) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
 
 export default function HomePage() {
   const router = useRouter();
   const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [checking, setChecking] = useState(true);
 
-  // 发送验证码
-  const sendCode = async () => {
+  // Check if already logged in
+  useEffect(() => {
+    api('/api/auth/me').then((data) => {
+      if (data.user) {
+        router.push('/questionnaire');
+      } else {
+        setChecking(false);
+      }
+    }).catch(() => setChecking(false));
+  }, [router]);
+
+  const handleLogin = async () => {
+    setError('');
     if (!/^1[3-9]\d{9}$/.test(phone)) {
-      alert('请输入正确的手机号');
+      setError('请输入正确的手机号');
+      return;
+    }
+    if (password.length < 6) {
+      setError('密码至少 6 位');
       return;
     }
     setLoading(true);
-    // TODO: 对接 Supabase Auth OTP
-    // 模拟发送
-    setTimeout(() => {
-      setCodeSent(true);
+
+    try {
+      const data = await api('/api/auth/client/login', { phone, password });
+      if (data.error) {
+        setError(data.error);
+      } else {
+        router.push('/questionnaire');
+      }
+    } catch {
+      setError('网络错误，请重试');
+    } finally {
       setLoading(false);
-      console.log('验证码已发送到', phone);
-    }, 1000);
+    }
   };
 
-  // 验证并登录
-  const verifyCode = async () => {
-    if (code.length < 4) {
-      alert('请输入验证码');
-      return;
-    }
-    setLoading(true);
-    // TODO: 对接 Supabase Auth verify OTP
-    // 模拟验证
-    setTimeout(() => {
-      setLoading(false);
-      router.push('/questionnaire');
-    }, 800);
-  };
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">加载中...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -59,67 +84,51 @@ export default function HomePage() {
             </p>
           </div>
 
-          {/* 登录表单 */}
+          {/* Login Form */}
           <div className="space-y-4">
-            {!codeSent ? (
-              <>
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">手机号</label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                    placeholder="请输入手机号"
-                    className="input-field text-lg tracking-wide"
-                    maxLength={11}
-                  />
-                </div>
-                <button
-                  onClick={sendCode}
-                  disabled={loading || phone.length < 11}
-                  className="btn-primary w-full"
-                >
-                  {loading ? '发送中...' : '获取验证码'}
-                </button>
-              </>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">
-                    验证码已发送至 {phone.slice(0, 3)}****{phone.slice(7)}
-                  </label>
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="请输入 4-6 位验证码"
-                    className="input-field text-lg tracking-widest text-center"
-                    maxLength={6}
-                    autoFocus
-                  />
-                </div>
-                <button
-                  onClick={verifyCode}
-                  disabled={loading || code.length < 4}
-                  className="btn-primary w-full"
-                >
-                  {loading ? '验证中...' : '登录'}
-                </button>
-                <button
-                  onClick={() => { setCodeSent(false); setCode(''); }}
-                  className="w-full text-center text-sm text-gray-400 py-2 hover:text-gray-600"
-                >
-                  更换手机号或重新发送
-                </button>
-              </>
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">手机号</label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                placeholder="请输入手机号"
+                className="input-field text-lg tracking-wide"
+                maxLength={11}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">密码</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="请输入密码"
+                className="input-field text-lg"
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
             )}
+
+            <button
+              onClick={handleLogin}
+              disabled={loading || phone.length < 11 || password.length < 6}
+              className="btn-primary w-full"
+            >
+              {loading ? '登录中...' : '登录'}
+            </button>
           </div>
+
+          {/* Hint */}
+          <p className="text-xs text-gray-400 text-center mt-6 leading-relaxed">
+            首次使用？请通过设计师发送的邀请链接进入，设置密码后方可登录。
+          </p>
         </div>
       </div>
-
-      <p className="text-center text-xs text-gray-300 pb-8">
-        登录即表示同意隐私政策和服务条款
-      </p>
     </div>
   );
 }

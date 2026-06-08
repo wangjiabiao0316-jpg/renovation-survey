@@ -89,6 +89,18 @@ export interface Designer {
   name: string;
 }
 
+// ============ Session（JWT payload） ============
+
+export interface ClientSession {
+  clientId: string;
+  phone: string;
+}
+
+export interface AdminSession {
+  designerId: string;
+  email: string;
+}
+
 // ============ 步骤进度 ============
 
 export interface StepProgress {

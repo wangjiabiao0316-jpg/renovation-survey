@@ -1,15 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Client, ClientStatus } from '@/types';
+import { ClientStatus } from '@/types';
 
-// 模拟数据
-const MOCK_CLIENTS: Client[] = [
-  { id: '1', designerId: 'd1', phone: '138****1234', name: '张先生', status: 'submitted', token: 't1', createdAt: '2026-05-10', updatedAt: '2026-06-01' },
-  { id: '2', designerId: 'd1', phone: '139****5678', name: '李女士', status: 'started', token: 't2', createdAt: '2026-06-01', updatedAt: '2026-06-05' },
-  { id: '3', designerId: 'd1', phone: '136****9012', name: '王家', status: 'invited', token: 't3', createdAt: '2026-06-08', updatedAt: '2026-06-08' },
-];
+interface Client {
+  id: string;
+  phone: string;
+  name: string;
+  status: ClientStatus;
+  token: string;
+  created_at: string;
+  updated_at: string;
+}
 
 const STATUS_LABELS: Record<ClientStatus, { label: string; color: string }> = {
   invited: { label: '未开始', color: 'bg-gray-100 text-gray-600' },
@@ -20,9 +23,61 @@ const STATUS_LABELS: Record<ClientStatus, { label: string; color: string }> = {
 export default function ClientsPage() {
   const router = useRouter();
   const [filter, setFilter] = useState<ClientStatus | 'all'>('all');
-  const [clients] = useState<Client[]>(MOCK_CLIENTS);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [invitePhone, setInvitePhone] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [inviteResult, setInviteResult] = useState<string | null>(null);
 
-  const filtered = filter === 'all' ? clients : clients.filter((c) => c.status === filter);
+  const loadClients = async () => {
+    try {
+      const res = await fetch(`/api/admin/clients${filter !== 'all' ? `?status=${filter}` : ''}`);
+      const data = await res.json();
+      if (data.clients) setClients(data.clients);
+    } catch (err) {
+      console.error('Failed to load clients:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    loadClients();
+  }, [filter]);
+
+  const handleInvite = async () => {
+    if (!/^1[3-9]\d{9}$/.test(invitePhone)) {
+      alert('请输入正确的手机号');
+      return;
+    }
+    setInviting(true);
+    setInviteResult(null);
+
+    try {
+      const res = await fetch('/api/admin/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: invitePhone }),
+      });
+      const data = await res.json();
+
+      if (data.inviteUrl) {
+        setInviteResult(data.inviteUrl);
+        loadClients(); // Refresh list
+      } else if (data.message) {
+        setInviteResult(data.message);
+      } else {
+        setInviteResult(data.error || '创建失败');
+      }
+    } catch {
+      setInviteResult('网络错误');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const filtered = clients.filter((c) => filter === 'all' || c.status === filter);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -61,52 +116,92 @@ export default function ClientsPage() {
         </div>
 
         {/* Client Cards */}
-        <div className="space-y-3">
-          {filtered.map((client) => (
-            <button
-              key={client.id}
-              onClick={() => router.push(`/admin/clients/${client.id}`)}
-              className="w-full card text-left hover:border-gray-300 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-sm text-gray-800">
-                    {client.name || client.phone}
+        {loading ? (
+          <p className="text-center text-gray-400 text-sm py-8">加载中...</p>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((client) => (
+              <button
+                key={client.id}
+                onClick={() => router.push(`/admin/clients/${client.id}`)}
+                className="w-full card text-left hover:border-gray-300 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm text-gray-800">
+                      {client.name || client.phone}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {client.phone} · 更新于 {client.updated_at?.slice(0, 10)}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    {client.phone} · 更新于 {client.updatedAt}
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_LABELS[client.status].color}`}>
+                      {STATUS_LABELS[client.status].label}
+                    </span>
+                    <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_LABELS[client.status].color}`}>
-                    {STATUS_LABELS[client.status].label}
-                  </span>
-                  <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            ))}
 
-          {filtered.length === 0 && (
-            <p className="text-center text-gray-400 text-sm py-8">暂无客户</p>
-          )}
-        </div>
+            {filtered.length === 0 && (
+              <p className="text-center text-gray-400 text-sm py-8">暂无客户</p>
+            )}
+          </div>
+        )}
 
-        {/* 邀请链接生成 */}
+        {/* Invite */}
         <div className="card mt-6">
           <h3 className="text-sm font-medium text-gray-700 mb-3">邀请新客户</h3>
           <div className="flex gap-2">
             <input
               type="text"
+              value={invitePhone}
+              onChange={(e) => setInvitePhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
               placeholder="客户手机号"
               className="input-field flex-1 text-sm"
+              maxLength={11}
             />
-            <button className="btn-primary text-sm whitespace-nowrap">
-              生成链接
+            <button
+              onClick={handleInvite}
+              disabled={inviting || invitePhone.length < 11}
+              className="btn-primary text-sm whitespace-nowrap"
+            >
+              {inviting ? '生成中...' : '生成链接'}
             </button>
           </div>
+
+          {inviteResult && (
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+              {inviteResult.startsWith('http') ? (
+                <>
+                  <p className="text-xs text-gray-500 mb-2">邀请链接（微信发送给客户）：</p>
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={inviteResult}
+                      className="input-field flex-1 text-xs"
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteResult);
+                        alert('已复制到剪贴板');
+                      }}
+                      className="text-xs text-gray-500 hover:text-gray-700 whitespace-nowrap"
+                    >
+                      复制
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-gray-500">{inviteResult}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

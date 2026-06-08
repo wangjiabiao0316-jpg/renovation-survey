@@ -1,90 +1,65 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { SECTION_ORDER, SECTION_META, ALL_SECTIONS } from '@/lib/questions';
 
-// 模拟答案数据
-const MOCK_ANSWERS: Record<string, any> = {
-  pain_points: '1. 厨房太小，做菜转不开身\n2. 玄关鞋子堆一地，进门就烦\n3. 孩子没有安静写作业的地方',
-  abandoned_habits: '想在家练瑜伽但客厅铺不开垫子',
-  weekday_routine: '早上起床 → 准备早餐 → 送孩子上学 → 回家工作（远程） → 接孩子 → 做晚饭 → 辅导作业 → 入睡',
-  weekend_routine: '周末会一家人去公园，下午在家看电影或各自看书',
-  idle_space: '客厅使用率最高，次卧基本闲置（老人偶尔来住）',
-  home_feeling: '推开门就放松，每个人都有自己的小角落',
-  life_words: '忙碌 → 从容',
-  priorities_sort: '["solitude", "efficiency", "interaction", "low_maintenance", "aesthetics", "social"]',
-  together_time: '晚饭和周末需要一家人在一起，工作日的白天各自独处',
-  future_changes: '["more_members"]',
-  home_vs_house: '家是有温度的地方，房子只是建筑',
-  community: '天通苑北二区',
-  area: '建筑面积 98 ㎡ / 套内 82 ㎡',
-  layout: '3 室 2 厅 1 卫 1 阳台',
-  floor_info: '12/18楼，有电梯，朝南',
-  house_status: 'second_hand',
-  move_in: '3m',
-  budget_mode: 'half',
-  budget_range: '20_35w',
-  has_plan: 'no',
-  shoe_count: '20_50',
-  storage_800: 'yes',
-  large_items: '["stroller", "luggage"]',
-  media: 'projector',
-  activities: '["chat", "movie", "read", "kids", "relax"]',
-  dual_use: 'kids',
-  daily_diners: '3',
-  party_freq: 'monthly',
-  island: 'social',
-  bar_area: 'merge',
-  cooking_freq: 'daily',
-  open_kitchen: 'semi',
-  appliances: '["dishwasher", "oven", "disposal"]',
-  main_cook: '我（女主人），身高 162cm',
-  laundry: '["dryer", "hang"]',
-  cleaning_devices: '["robot", "vacuum"]',
-  cleaning_storage: 'cabinet',
-  bathroom_count: '现有1个',
-  master_bath: '["shower", "smart_toilet"]',
-  guest_bath: '["seat", "dry_wet"]',
-  bedroom_count: '3',
-  guest_room: 'occasional',
-  flexible_guest: 'yes',
-  master_extra: '["lounge"]',
-  bedroom_priority: 'quiet',
-  closet_type: 'partition',
-  closet_length: '2_4',
-  vanity: 'in_bedroom',
-  study_type: 'dedicated',
-  study_user: '["focus", "tutoring"]',
-  book_count: '200',
-  balcony_use: '["plants", "relax"]',
-  enclose: 'yes',
-  balcony_vibe: 'both',
-  has_pet: 'no',
-  storage_items: '["clothes", "books", "kids", "daily_supplies"]',
-  storage_style: 'both',
-  storage_pain: '过季衣服和被子，永远找不到地方放',
-  style: '["japanese", "nordic"]',
-  color_tone: 'warm',
-  color_taboo: '不喜欢大红色',
-  material: '["wood", "fabric"]',
-  elements: '["shutters", "rattan", "arch"]',
-  lighting: 'varies',
-  three_words: '放松、温暖、自在',
-};
+interface ClientDetail {
+  client: {
+    id: string;
+    phone: string;
+    name: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  };
+  answers: Record<string, any>;
+  familyMembers: Array<{
+    role: string;
+    age_group: string;
+    daily_state: string;
+    time_at_home: string;
+    activities: string[];
+    special_needs: string;
+  }>;
+}
 
 export default function ClientDetailPage() {
   const router = useRouter();
+  const { id } = useParams<{ id: string }>();
+  const [data, setData] = useState<ClientDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/admin/clients/${id}`);
+        const result = await res.json();
+        if (result.error) {
+          setError(result.error);
+        } else {
+          setData(result);
+        }
+      } catch {
+        setError('加载失败');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [id]);
 
   const getAnswerDisplay = (sectionKey: string, questionKey: string) => {
-    const value = MOCK_ANSWERS[questionKey];
-    if (value === undefined) return <span className="text-gray-300 text-sm">未填写</span>;
+    const value = data?.answers?.[questionKey];
+    if (value === undefined || value === null) return <span className="text-gray-300 text-sm">未填写</span>;
 
     if (Array.isArray(value)) {
       return (
         <div className="flex flex-wrap gap-1">
           {value.map((v, i) => (
             <span key={i} className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
-              {v}
+              {String(v)}
             </span>
           ))}
         </div>
@@ -93,6 +68,27 @@ export default function ClientDetailPage() {
 
     return <p className="text-sm text-gray-700 whitespace-pre-wrap">{String(value)}</p>;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">加载中...</p>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-400 text-sm mb-4">{error || '客户不存在'}</p>
+          <button onClick={() => router.push('/admin/clients')} className="text-sm text-gray-500 hover:text-gray-700">
+            ← 返回列表
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -106,10 +102,33 @@ export default function ClientDetailPage() {
             ← 返回
           </button>
           <div>
-            <h1 className="text-lg font-bold text-gray-800">张先生 · 问卷详情</h1>
-            <p className="text-xs text-gray-400">已提交 · 2026-06-01</p>
+            <h1 className="text-lg font-bold text-gray-800">
+              {data.client.name || data.client.phone} · 问卷详情
+            </h1>
+            <p className="text-xs text-gray-400">
+              {data.client.status === 'submitted' ? '已提交' : '填写中'} · {data.client.updated_at?.slice(0, 10)}
+            </p>
           </div>
         </div>
+
+        {/* Family Members (if any) */}
+        {data.familyMembers.length > 0 && data.familyMembers[0].role && (
+          <div className="card mb-4">
+            <h3 className="font-medium text-sm text-gray-800 mb-3">家庭成员</h3>
+            <div className="space-y-2">
+              {data.familyMembers.map((m, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-sm">
+                  <span className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+                    {idx + 1}
+                  </span>
+                  <span className="text-gray-700">
+                    {m.role} · {m.age_group} · {m.time_at_home}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Answers by section */}
         <div className="space-y-4">
@@ -140,8 +159,8 @@ export default function ClientDetailPage() {
 
         {/* Export button */}
         <div className="mt-8 mb-4">
-          <button className="btn-secondary w-full">
-            导出 PDF
+          <button className="btn-secondary w-full" onClick={() => window.print()}>
+            导出 PDF（打印）
           </button>
         </div>
       </div>
