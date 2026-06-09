@@ -9,7 +9,6 @@ interface Client {
   phone: string;
   name: string;
   status: ClientStatus;
-  token: string;
   created_at: string;
   updated_at: string;
 }

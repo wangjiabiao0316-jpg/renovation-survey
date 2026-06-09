@@ -2,11 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getServiceSupabase } from '@/lib/db';
 import { getAdminSession } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+function getClientIP(request: NextRequest): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown';
+}
 
 export async function POST(request: NextRequest) {
   const session = await getAdminSession();
   if (!session) {
     return NextResponse.json({ error: '未登录' }, { status: 401 });
+  }
+
+  // 速率限制：每分钟 10 次（同一管理员）
+  const ip = getClientIP(request);
+  const rateLimit = checkRateLimit({
+    windowSeconds: 60,
+    maxAttempts: 10,
+    identifier: `invite:${session.designerId}`,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `操作过于频繁，请 ${rateLimit.retryAfter} 秒后重试` },
+      { status: 429 }
+    );
   }
 
   try {

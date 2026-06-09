@@ -1,9 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/db';
-import { getClientSession } from '@/lib/auth';
+import { getClientSession, getAdminSession } from '@/lib/auth';
+
+// Magic bytes for supported image formats
+const MAGIC_BYTES: Record<string, number[]> = {
+  'image/jpeg': [0xff, 0xd8, 0xff],
+  'image/png': [0x89, 0x50, 0x4e, 0x47],
+  'image/webp': [0x52, 0x49, 0x46, 0x46],
+};
+
+function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
+  const expected = MAGIC_BYTES[mimeType];
+  if (!expected) return true; // 不在检查列表中的类型放行（如 HEIC，Safari 上传会变 MIME）
+  for (let i = 0; i < expected.length; i++) {
+    if (buffer[i] !== expected[i]) return false;
+  }
+  return true;
+}
 
 export async function POST(request: NextRequest) {
-  // Accept both client and admin uploads
+  // 必须登录（client 或 admin）
+  const clientSession = await getClientSession();
+  const adminSession = await getAdminSession();
+  if (!clientSession && !adminSession) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+
   const supabase = getServiceSupabase();
 
   try {
@@ -28,6 +50,11 @@ export async function POST(request: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+
+    // Validate file content matches declared MIME type
+    if (!validateMagicBytes(buffer, file.type)) {
+      return NextResponse.json({ error: '文件格式不匹配，仅支持 JPG/PNG/WebP' }, { status: 400 });
+    }
 
     // Generate unique filename
     const ext = file.name.split('.').pop() || 'jpg';

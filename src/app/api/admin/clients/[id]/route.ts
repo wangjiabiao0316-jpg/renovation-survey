@@ -17,7 +17,7 @@ export async function GET(
   // Fetch client
   const { data: client, error: clientError } = await supabase
     .from('clients')
-    .select('id, phone, name, status, token, created_at, updated_at')
+    .select('id, phone, name, status, created_at, updated_at')
     .eq('id', id)
     .eq('designer_id', session.designerId)
     .single();

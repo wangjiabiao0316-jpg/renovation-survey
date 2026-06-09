@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('clients')
-    .select('id, phone, name, status, token, created_at, updated_at')
+    .select('id, phone, name, status, created_at, updated_at')
     .eq('designer_id', session.designerId)
     .order('updated_at', { ascending: false });
 

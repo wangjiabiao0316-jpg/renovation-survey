@@ -2,8 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getServiceSupabase } from '@/lib/db';
 import { setClientSessionCookie } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+function getClientIP(request: NextRequest): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown';
+}
 
 export async function POST(request: NextRequest) {
+  // 速率限制：每分钟 5 次
+  const ip = getClientIP(request);
+  const rateLimit = checkRateLimit({
+    windowSeconds: 60,
+    maxAttempts: 5,
+    identifier: `client-register:${ip}`,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `请求过于频繁，请 ${rateLimit.retryAfter} 秒后重试` },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await request.json();
     const { token, password } = body;
