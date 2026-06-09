@@ -53,7 +53,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '创建失败' }, { status: 500 });
     }
 
-    const inviteUrl = `${process.env.NEXT_PUBLIC_BASE_URL || request.nextUrl.origin}/invite/${token}`;
+    // 用请求的 Host header 构建链接，适配 localhost / 局域网 IP / 域名多种场景
+    const host = request.headers.get('host') || request.nextUrl.host;
+    const hostname = host.split(':')[0];
+    const isLocal = hostname === 'localhost' || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+    const baseUrl = `${isLocal ? 'http' : 'https'}://${host}`;
+    const inviteUrl = `${baseUrl}/invite/${token}`;
 
     return NextResponse.json({ client, inviteUrl });
   } catch (err) {
