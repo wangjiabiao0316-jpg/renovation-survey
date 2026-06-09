@@ -93,8 +93,8 @@ export default function ClientDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-lg mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
+        {/* Header — no-print */}
+        <div className="flex items-center gap-3 mb-6 no-print">
           <button
             onClick={() => router.push('/admin/clients')}
             className="text-gray-400 hover:text-gray-600"
@@ -109,6 +109,18 @@ export default function ClientDetailPage() {
               {data.client.status === 'submitted' ? '已提交' : '填写中'} · {data.client.updated_at?.slice(0, 10)}
             </p>
           </div>
+        </div>
+
+        {/* 打印时显示标题 */}
+        <div className="hidden print:block mb-6">
+          <h1 className="text-xl font-bold mb-2">装修需求问卷 · 客户答卷</h1>
+          <div className="text-sm text-gray-600 mb-1">
+            客户：{data.client.name || data.client.phone}　手机：{data.client.phone}
+          </div>
+          <div className="text-sm text-gray-500 mb-4">
+            提交时间：{data.client.updated_at ? new Date(data.client.updated_at).toLocaleString('zh-CN') : '-'}
+          </div>
+          <hr className="border-gray-300 mb-4" />
         </div>
 
         {/* Family Members (if any) */}
@@ -157,8 +169,8 @@ export default function ClientDetailPage() {
           })}
         </div>
 
-        {/* Export button */}
-        <div className="mt-8 mb-4">
+        {/* Export button — hidden when printing */}
+        <div className="mt-8 mb-4 no-print">
           <button className="btn-secondary w-full" onClick={() => window.print()}>
             导出 PDF（打印）
           </button>

@@ -31,3 +31,59 @@
     @apply bg-white rounded-xl border border-gray-200 p-6 shadow-sm;
   }
 }
+
+/* ── 打印样式 — 用于导出客户答卷 PDF ── */
+@media print {
+  @page {
+    size: A4;
+    margin: 1.5cm 1.8cm;
+  }
+
+  body {
+    background: white !important;
+    color: #1a1a1a !important;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+
+  /* 隐藏导航栏、按钮等 UI 元素 */
+  header, nav, .btn-primary, .btn-secondary, button,
+  .no-print, [role="navigation"] {
+    display: none !important;
+  }
+
+  /* 卡片样式适配黑白打印 */
+  .card {
+    background: white !important;
+    border: none !important;
+    border-bottom: 1px solid #e5e5e5 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 12px 0 !important;
+    page-break-inside: avoid;
+  }
+
+  /* 标签颜色 */
+  .text-gray-300, .text-gray-400, .text-gray-500 {
+    color: #666 !important;
+  }
+  .text-gray-700, .text-gray-800 {
+    color: #1a1a1a !important;
+  }
+
+  /* 保持背景色标签可见 */
+  span[class*="bg-"] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 文字大小适配 */
+  .text-xs { font-size: 10px !important; }
+  .text-sm { font-size: 11px !important; }
+  .text-lg { font-size: 16px !important; }
+
+  /* 隐藏 Swiper 分页点等 UI 装饰 */
+  .swiper-pagination, .swiper-button-prev, .swiper-button-next {
+    display: none !important;
+  }
+}
